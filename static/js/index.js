@@ -89,7 +89,7 @@ async function getRoute() {
 
   control = L.Routing.control({
     waypoints: [L.latLng(startPointLatLng), L.latLng(endPointLatLng)],
-    createMarker: function (i, wp) {
+    createMarker: function (_i, wp) {
       return L.marker(wp.latLng, {
         draggable: false,
         icon: L.AwesomeMarkers.icon({
@@ -137,11 +137,17 @@ async function getRoute() {
       const bestRouteIndex = scores.indexOf(Math.max(...scores));
       const bestRoute = routes[bestRouteIndex];
 
-      // Display the best route
-      control.setWaypoints([
-        L.latLng(bestRoute.waypoints[0].latLng),
-        L.latLng(bestRoute.waypoints[bestRoute.waypoints.length - 1].latLng),
-      ]);
+      // Add midway points to the best route based on the selected preference
+      if (preference !== "fastest") {
+        const updatedWaypoints = await addMidwayPoints(bestRoute, preference, getWeatherData);
+        control.setWaypoints(updatedWaypoints);
+      } else {
+        // Use the original best route waypoints if the preference is set to "fastest"
+        control.setWaypoints([
+          L.latLng(bestRoute.waypoints[0].latLng),
+          L.latLng(bestRoute.waypoints[bestRoute.waypoints.length - 1].latLng),
+        ]);
+      }
 
       // Set the alternatives in the control's options
       control.options.alternatives = routes.filter(
@@ -153,6 +159,7 @@ async function getRoute() {
     control.route();
   });
 }
+
 
 async function getLatLngFromAddress(address) {
   const response = await fetch(
@@ -179,6 +186,16 @@ async function getWeatherData(lat, lng) {
   return data;
 }
 
+async function getCrimeData(lat, lng, date) {
+  const response = await fetch(
+    `https://data.police.uk/api/crimes-street/all-crime?lat=${lat}&lng=${lng}&date=${date}`
+  );
+  const data = await response.json();
+  console.log(data);
+  return data;
+}
+
+
 async function calculateRouteScores(routes, preference) {
   const scores = [];
 
@@ -199,8 +216,17 @@ async function calculateRouteScores(routes, preference) {
         break;
 
       case "safest":
-        // Add scores based on distance and safety factors
-        // You need to define your own safety factors and scoring logic
+        let totalCrimes = 0;
+
+        for await (const waypoint of waypoints) {
+          const currentDate = new Date();
+          const monthBefore = new Date(currentDate.setMonth(currentDate.getMonth() - 1));
+          const crimeData = await getCrimeData(waypoint.lat, waypoint.lng, `${monthBefore.getFullYear()}-${monthBefore.getMonth() + 1}`);
+          totalCrimes += crimeData.length;
+        }
+
+        // Add scores based on totalCrimes
+        score -= totalCrimes;
         break;
 
       // Calculate scores based on weather
@@ -229,7 +255,7 @@ async function calculateRouteScores(routes, preference) {
         score -= totalPm25;
         break;
 
-      // Calculate scores based on traffic (For demonstration purposes, this is a simple example)
+      // Calculate scores based on traffic
       case "less_traffic":
         let trafficPoints = 0;
 
@@ -246,6 +272,79 @@ async function calculateRouteScores(routes, preference) {
   return scores;
 }
 
+
+async function addMidwayPoints(route, preference, apiFunction) {
+  const waypoints = [route.waypoints[0].latLng];
+  let currentPoint = route.waypoints[0].latLng;
+
+  while (true) {
+    const distanceToDestination = currentPoint.distanceTo(route.waypoints[route.waypoints.length - 1].latLng);
+
+    if (distanceToDestination <= 5 * 1609.34) { // 5 miles
+      break;
+    }
+
+    const stepPoint = currentPoint.destinationPoint(5 * 1609.34, currentPoint.bearingTo(route.waypoints[route.waypoints.length - 1].latLng));
+
+    const nearbyPoints = getNearbyPoints(stepPoint, 1.25 * 1609.34); // 1.25 miles
+
+    let bestPoint = stepPoint;
+    let bestValue;
+
+    for (const point of nearbyPoints) {
+      const data = await apiFunction(point.lat, point.lng);
+      const value = getPreferenceValue(data, preference);
+
+      if (!bestValue || value < bestValue) {
+        bestValue = value;
+        bestPoint = point;
+      }
+    }
+
+    waypoints.push(bestPoint);
+    currentPoint = bestPoint;
+  }
+
+  waypoints.push(route.waypoints[route.waypoints.length - 1].latLng);
+
+  return waypoints;
+}
+
+function getNearbyPoints(center, radius) {
+  const latRadian = (Math.PI / 180) * center.lat;
+  const latOffset = radius / 111.32;
+  const lngOffset = radius / (40075 * Math.cos(latRadian) / 360);
+  
+  const topLeft = [center.lat + latOffset, center.lng - lngOffset];
+  const bottomRight = [center.lat - latOffset, center.lng + lngOffset];
+  
+  return [
+    L.latLng(topLeft),
+    L.latLng(bottomRight),
+  ];
+}
+
+async function getPreferenceValue(preference, lat, lng) {
+  const data = await getWeatherData(lat, lng);
+
+  switch (preference) {
+    case "less_rainy":
+      return data.hourly.precipitation_sum;
+    case "less_polluted":
+      return data.hourly.pm25;
+    case "safest"://TODO
+      // Add your logic here for the safest route
+      break;
+    case "less_traffic"://TODO
+      // Add your logic here for the less traffic route
+      break;
+    default:
+      return null;
+  }
+}
+
+
+
 document.querySelectorAll(".clear-input-btn").forEach((btn) => {
   btn.addEventListener("click", (event) => {
     event.preventDefault();
@@ -254,97 +353,45 @@ document.querySelectorAll(".clear-input-btn").forEach((btn) => {
   });
 });
 
-document
-  .getElementById("autoUpdateSwitch")
-  .addEventListener("change", (event) => {
-    if (!event.target.checked) {
-      clearInterval(updateInterval);
-      updateInterval = null;
-    }
-  });
-
 let routeLine = null;
 
 function routeExists() {
   return routeLine !== null;
 }
 
-let updateRoute = false;
-let updateInterval = null;
-let watchId;
+let userLocationUpdateInterval = null;
 
 async function updateUserLocation() {
-    const autoUpdateSwitch = document.getElementById("autoUpdateSwitch");
-  
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const latitude = position.coords.latitude;
-          const longitude = position.coords.longitude;
-  
-          if (userLocationMarker) {
-            // Update the marker's position without moving the view
-            userLocationMarker.setLatLng([latitude, longitude]);
-          } else {
-            // Create the marker if it doesn't exist
-            userLocationMarker = L.marker([latitude, longitude]).addTo(map);
-          }
-  
-          if (autoUpdateSwitch.checked) {
-            if (!routeExists()) { // Replace this with your function to check if a route exists on the map
-              // If no route exists, keep updating user's location
-              startPointMarker.setLatLng(userLocationMarker.getLatLng());
-            } else {
-              // Check if the user is close to the start point
-              const startPointDistance = userLocationMarker
-                .getLatLng()
-                .distanceTo(startPointMarker.getLatLng());
-              const onRoute = checkIfUserOnRoute(); // Replace this with your function to check if the user is on the route
-  
-              if (startPointDistance < shortDistance && onRoute) {
-                startPointMarker.setLatLng(userLocationMarker.getLatLng());
-              }
-            }
-          }
-        },
-        (error) => {
-          console.error("Error updating user location: ", error);
-        },
-        {
-          enableHighAccuracy: true,
-          maximumAge: 0,
-          timeout: 5000,
-        }
-      );
-    } else {
-      console.error("Geolocation is not supported by this browser.");
-    }
-  }
-  
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
 
-function handleAutoUpdateChange() {
-  if (autoUpdateSwitch.checked) {
-    if (!updateInterval) {
-      updateInterval = setInterval(updateUserLocation, 1000);
-    }
+        if (userLocationMarker) {
+          // Update the marker's position without moving the view
+          userLocationMarker.setLatLng([latitude, longitude]);
+        } else {
+          // Create the marker if it doesn't exist
+          userLocationMarker = L.marker([latitude, longitude]).addTo(map);
+        }
+      },
+      (error) => {
+        console.error("Error updating user location: ", error);
+      },
+      {
+        enableHighAccuracy: true,
+        maximumAge: 0,
+        timeout: 5000, // You can adjust the timeout if needed
+      }
+    );
   } else {
-    clearInterval(updateInterval);
-    updateInterval = null;
+    console.error("Geolocation is not supported by this browser.");
   }
 }
 
-// Call handleAutoUpdateChange when the checkbox is ticked
-autoUpdateSwitch.addEventListener('change', handleAutoUpdateChange);
-
-// Event listener for the autoUpdateSwitch checkbox
-document
-  .getElementById("autoUpdateSwitch")
-  .addEventListener("change", (event) => {
-    if (!event.target.checked) {
-      clearInterval(updateInterval);
-      updateInterval = null;
-    }
-  });
+// Call updateUserLocation every second
+setInterval(updateUserLocation, 1000);
 
 $(document).ready(function () {
   const collapseBtn = $(".leaflet-routing-collapse-btn");
