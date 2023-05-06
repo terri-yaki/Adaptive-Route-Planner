@@ -1,0 +1,30 @@
+{
+  "name": "fyp_arp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "jest.config.js",
+  "type": "module",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "jest"
+  },
+  "devDependencies": {
+    "jest": "^27.4.5"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/terri-yaki/fyp_arp.git"
+  },
+  "keywords": [
+    "arp",
+    "fyp"
+  ],
+  "author": "Terry",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/terri-yaki/fyp_arp/issues"
+  },
+  "homepage": "https://github.com/terri-yaki/fyp_arp#readme"
+}
