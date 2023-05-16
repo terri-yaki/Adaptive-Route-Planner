@@ -68,6 +68,12 @@ async function setStartPointToCurrentLocation() {
   }
 }
 
+async function getCountryCode() {
+  const response = await fetch("https://ip-api.com/json/");
+  const data = await response.json();
+  return data.countryCode;
+}
+
 async function getAddressFromLatLng(latitude, longitude) {
   const response = await fetch(
     `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${latitude}&lon=${longitude}`
@@ -76,6 +82,7 @@ async function getAddressFromLatLng(latitude, longitude) {
   return data.display_name;
 }
 
+// get routes from leaflet routing machine
 async function getRoute() {
   const startPoint = document.getElementById("start_point").value;
   const endPoint = document.getElementById("end_point").value;
@@ -131,6 +138,15 @@ async function getRoute() {
         'input[name="route_preference"]:checked'
       ).value;
 
+      const apiFunction = getApiFunctionForPreference(preference);
+
+      for (const route of routes) {
+        const modifiedWaypoints = await addMidwayPoints(route, preference, apiFunction);
+  
+        // Update the route's waypoints with the modifiedWaypoints
+        route.setWaypoints(modifiedWaypoints);
+      }
+
       const scores = await calculateRouteScores(routes, preference);
 
       // Find the highest-scoring route
@@ -160,12 +176,13 @@ async function getRoute() {
   });
 }
 
-
 async function getLatLngFromAddress(address) {
+  const countryCode = await getCountryCode();
+
   const response = await fetch(
-    `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(
+    `https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=${countryCode}&q=${encodeURIComponent(
       address
-    )}`
+    )}*`
   );
   const data = await response.json();
   if (data && data.length > 0) {
@@ -178,6 +195,19 @@ async function getLatLngFromAddress(address) {
   }
 }
 
+function getApiFunctionForPreference(preference) {
+  switch (preference) {
+    case "safest":
+      return getCrimeData;
+    case "less_rainy":
+      return getWeatherData;
+    case "less_polluted":
+      return getWeatherData;
+    default:
+      return null;
+  }
+}
+
 async function getWeatherData(lat, lng) {
   const response = await fetch(
     `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=precipitation,pm25`
@@ -186,15 +216,26 @@ async function getWeatherData(lat, lng) {
   return data;
 }
 
-async function getCrimeData(lat, lng, date) {
-  const response = await fetch(
-    `https://data.police.uk/api/crimes-street/all-crime?lat=${lat}&lng=${lng}&date=${date}`
-  );
-  const data = await response.json();
-  console.log(data);
-  return data;
-}
+async function getCrimeData(lat, lng, radius) {
+  const currentDate = new Date();
+  const crimeData = [];
 
+  for (let i = 0; i < 24; i++) {
+    const monthBefore = new Date(currentDate.setMonth(currentDate.getMonth() - 1));
+    const year = monthBefore.getFullYear();
+    const month = monthBefore.getMonth() + 1;
+
+    const response = await fetch(
+      `https://data.police.uk/api/crimes-street/all-crime?lat=${lat}&lng=${lng}&date=${year}-${month}&poly=${radius}`
+    );
+
+    const data = await response.json();
+
+    crimeData.push(...data);
+  }
+
+  return crimeData;
+}
 
 async function calculateRouteScores(routes, preference) {
   const scores = [];
@@ -219,10 +260,11 @@ async function calculateRouteScores(routes, preference) {
         let totalCrimes = 0;
 
         for await (const waypoint of waypoints) {
-          const currentDate = new Date();
-          const monthBefore = new Date(currentDate.setMonth(currentDate.getMonth() - 1));
-          const crimeData = await getCrimeData(waypoint.lat, waypoint.lng, `${monthBefore.getFullYear()}-${monthBefore.getMonth() + 1}`);
-          totalCrimes += crimeData.length;
+          const crimeData = await getCrimeData(waypoint.lat, waypoint.lng, 1.25); // 1.25 miles radius
+          totalCrimes += crimeData.filter(crime => {
+            const crimeLatLng = L.latLng(crime.location.latitude, crime.location.longitude);
+            return crimeLatLng.distanceTo(waypoint) <= 2000; // 1.25 miles radius
+          }).length;
         }
 
         // Add scores based on totalCrimes
@@ -325,25 +367,23 @@ function getNearbyPoints(center, radius) {
 }
 
 async function getPreferenceValue(preference, lat, lng) {
-  const data = await getWeatherData(lat, lng);
-
   switch (preference) {
+    case "safest":
+      const crimeData = await getCrimeData(lat, lng, getPastTwoYearsDateRange());
+      return crimeData.length;
     case "less_rainy":
-      return data.hourly.precipitation_sum;
+      const weatherDataForRain = await getWeatherData(lat, lng);
+      return weatherDataForRain.hourly.precipitation_sum;
     case "less_polluted":
-      return data.hourly.pm25;
-    case "safest"://TODO
-      // Add your logic here for the safest route
-      break;
-    case "less_traffic"://TODO
-      // Add your logic here for the less traffic route
+      const weatherDataForPollution = await getWeatherData(lat, lng);
+      return weatherDataForPollution.hourly.pm25;
+    case "less_traffic":
+
       break;
     default:
       return null;
   }
 }
-
-
 
 document.querySelectorAll(".clear-input-btn").forEach((btn) => {
   btn.addEventListener("click", (event) => {
@@ -386,8 +426,21 @@ async function updateUserLocation() {
       }
     );
   } else {
+    showErrorPopup("Geolocation is not supported by this browser.");
     console.error("Geolocation is not supported by this browser.");
   }
+}
+
+function showErrorPopup(message) {
+  const popup = document.createElement("div");
+  popup.classList.add("error-popup");
+  popup.innerText = message;
+
+  document.body.appendChild(popup);
+
+  setTimeout(() => {
+    popup.remove();
+  }, 3000);
 }
 
 // Call updateUserLocation every second
