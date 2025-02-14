@@ -1,4 +1,3 @@
-```markdown
 # Adaptive Route Planner
 
 Welcome to the Adaptive Route Planner repository. This project is designed to provide an intelligent routing solution that adapts to changing conditions, ensuring the most efficient path is taken.
