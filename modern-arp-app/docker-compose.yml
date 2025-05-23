@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: . # Build context is the root of 'modern-arp-app'
+      dockerfile: ./backend/Dockerfile
+    ports:
+      - "${BACKEND_PORT:-5000}:${PORT:-5000}" # Maps host port to container port (which is also set by PORT env var in Dockerfile)
+    environment:
+      - NODE_ENV=production
+      - PORT=${PORT:-5000} # Ensure PORT is also available to the container environment for server.js
+      # Other backend specific env vars can be added here or through env_file
+    env_file:
+      - ./backend/.env # Loads variables from the .env file in the backend directory
+    volumes:
+      - ./backend:/usr/src/app # Mount backend code for development (optional, remove for pure image-based deployment)
+      - /usr/src/app/node_modules # Anonymous volume to prevent host node_modules from overwriting container's
+      # Frontend assets are copied into the image during the build, so no volume needed for public/frontend
+    # If you wanted to build frontend first and then backend, you might use depends_on with a build target.
+    # For this setup, we assume frontend assets are built (e.g. `npm run build` in frontend dir)
+    # BEFORE `docker-compose up --build` is run. The backend Dockerfile copies them.
+
+  # Optional: Frontend service if you want to serve it separately via Nginx
+  # frontend:
+  #   build:
+  #     context: ./frontend
+  #     dockerfile: Dockerfile
+  #   ports:
+  #     - "8080:80" # Example: Host port 8080 maps to Nginx container port 80
+  #   # depends_on: # Potentially if frontend needed backend for API during build (not typical for Vite)
+  #   #   - backend
+
+# Note on frontend build:
+# This docker-compose.yml expects that you have already run `npm run build`
+# in the `modern-arp-app/frontend` directory. The `backend/Dockerfile` then
+# copies the `../frontend/dist` directory into `public/frontend`.
+# If you want to automate the frontend build as part of docker-compose,
+# you would need a more complex setup, perhaps using a multi-stage build in the
+# backend Dockerfile or a dedicated frontend builder service in this compose file
+# that the backend service depends on.
+#
+# Example for development:
+# To run this, you might first build your frontend assets:
+# cd modern-arp-app/frontend && npm install && npm run build && cd ..
+# Then run:
+# docker-compose up --build
+#
+# For production, you'd typically build images and push them to a registry.
+# The .env file for the backend should be present with necessary production values.
+# The MAPBOX_TOKEN for the frontend is built into the frontend assets;
+# ensure it's set appropriately before building the frontend (e.g., via a .env file in frontend).
+# (Currently, MAPBOX_TOKEN is a placeholder in MapComponent.jsx)

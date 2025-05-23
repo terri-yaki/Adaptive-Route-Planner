@@ -1,0 +1,10 @@
+node_modules
+.env
+*.log
+npm-debug.log
+Dockerfile
+public/frontend 
+# We don't want to include pre-existing public/frontend if context is backend,
+# as it will be populated by the COPY ../frontend/dist command in Dockerfile.
+# If building from root context, this might be redundant but harmless.
+# If an old build is in public/frontend, it might conflict. Best to exclude.

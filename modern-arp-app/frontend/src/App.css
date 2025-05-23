@@ -1,0 +1,77 @@
+.App {
+  text-align: center;
+  position: relative; /* Needed for absolute positioning of children */
+  width: 100vw;
+  height: 100vh;
+  display: flex; /* Use flex to manage layout if needed, though map is fullscreen */
+}
+
+.route-planner {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background-color: rgba(255, 255, 255, 0.9);
+  padding: 15px;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 10; /* Ensure it's above the map */
+  display: flex;
+  flex-direction: column;
+  gap: 10px; /* Spacing between elements */
+  width: 300px; /* Or max-width */
+}
+
+.route-planner h2 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 1.2em;
+}
+
+.route-planner div {
+  display: flex;
+  flex-direction: column;
+}
+
+.route-planner label {
+  margin-bottom: 5px;
+  font-weight: bold;
+  font-size: 0.9em;
+}
+
+.route-planner input[type="text"],
+.route-planner select {
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.route-planner button {
+  padding: 10px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 1em;
+  transition: background-color 0.2s;
+}
+
+.route-planner button:hover {
+  background-color: #0056b3;
+}
+
+.route-planner button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}
+
+.error-message {
+  color: red;
+  font-size: 0.9em;
+  margin-top: 5px;
+  margin-bottom: 10px;
+}
+
+/* Ensure map takes full screen behind the planner */
+/* The MapComponent's style prop (width: "100vw", height: "100vh") handles this */
