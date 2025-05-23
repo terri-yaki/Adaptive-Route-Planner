@@ -42,7 +42,7 @@ Before you can run the project, make sure you have the following installed:
 To start using the Adaptive Route Planner, simply run the main application script after installation:
 
 ```bash
-python run_planner.py
+python run.py
 ```
 
 ## Contributing
@@ -62,8 +62,3 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 ## Authors
 
 - **Terri Yaki** - *Initial work* - [terri-yaki](https://github.com/terri-yaki)
-
-## Acknowledgements
-
-- Thanks to all contributors who have helped this project grow.
-- Special shoutout to the open-source community for valuable tools and libraries.
